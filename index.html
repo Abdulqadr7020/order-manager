@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Manager (v17.0 Mobile Optimized)</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    
+    <!-- Flatpickr -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        primary: { 50: '#eef2ff', 100: '#e0e7ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 900: '#312e81' },
+                        slate: { 850: '#1e293b' }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .fade-in { animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        .hidden-section { display: none; }
+        
+        .custom-checkbox { 
+            appearance: none; width: 18px; height: 18px; border: 2px solid #cbd5e1; border-radius: 6px; cursor: pointer; position: relative; transition: all 0.2s;
+        }
+        .custom-checkbox:checked { background-color: #4f46e5; border-color: #4f46e5; }
+        .custom-checkbox:checked::after {
+            content: ''; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid white; border-width: 0 2px 2px 0; transform: rotate(45deg);
+        }
+
+        .row-paid { background-color: #f0fdfa !important; }
+        .sidebar-mobile { transform: translateX(-100%); transition: transform 0.3s ease-in-out; }
+        .sidebar-open { transform: translateX(0); }
+        
+        .slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes slideUp { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, -20px); opacity: 1; } }
+        
+        /* Flatpickr Theme Customization */
+        .flatpickr-calendar { border: none !important; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1) !important; border-radius: 16px !important; padding: 10px !important; }
+        .flatpickr-day.selected { background: #4f46e5 !important; border-color: #4f46e5 !important; }
+        .flatpickr-months .flatpickr-month { background: transparent !important; color: #1e293b !important; fill: #1e293b !important; margin-bottom: 10px; }
+        .flatpickr-current-month .flatpickr-monthDropdown-months, .flatpickr-current-month input.cur-year { color: #1e293b !important; font-weight: 700 !important; }
+        .flatpickr-weekdays { background: transparent !important; }
+        span.flatpickr-weekday { color: #64748b !important; font-weight: 600 !important; }
+        .flatpickr-day { border-radius: 8px !important; }
+        .flatpickr-day:hover { background: #eef2ff !important; }
+
+        .glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); }
+    </style>
+</head>
+<body class="bg-[#f8fafc] font-sans h-screen flex overflow-hidden text-slate-600" onclick="closeAllDropdowns(event)">
+
+    <!-- OVERLAY -->
+    <div id="sidebarOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/50 z-20 hidden md:hidden backdrop-blur-sm transition-all"></div>
+
+    <!-- SIDEBAR -->
+    <aside class="absolute inset-y-0 left-0 w-64 bg-[#0f172a] text-slate-300 flex-shrink-0 flex flex-col shadow-2xl z-30 sidebar-mobile md:relative md:transform-none transition-transform duration-300 ease-out border-r border-slate-800" id="sidebar">
+        <div class="p-6 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="bg-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-indigo-500/30"><i data-lucide="store" class="w-5 h-5"></i></div>
+                <div>
+                    <h1 class="font-bold text-white text-sm tracking-wide truncate max-w-[120px]" id="sidebarStoreName">My Store</h1>
+                    <p class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Admin Panel</p>
+                </div>
+            </div>
+            <button onclick="toggleSidebar()" class="md:hidden text-slate-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
+        </div>
+        
+        <nav class="flex-1 px-4 space-y-2 mt-4">
+            <button onclick="switchTab('dashboard')" class="w-full flex items-center gap-3 p-3.5 rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-900/20 transition-all hover:bg-indigo-500 group" id="nav-dashboard">
+                <i data-lucide="layout-grid" class="w-5 h-5 transition-transform group-hover:scale-110"></i><span class="text-sm font-medium">Dashboard</span>
+            </button>
+            <button onclick="switchTab('returns')" class="w-full flex items-center gap-3 p-3.5 rounded-xl hover:bg-slate-800 hover:text-white transition-all text-slate-400 group" id="nav-returns">
+                <i data-lucide="corner-down-left" class="w-5 h-5 transition-transform group-hover:scale-110"></i><span class="text-sm font-medium">Return Settings</span>
+            </button>
+            <button onclick="switchTab('products')" class="w-full flex items-center gap-3 p-3.5 rounded-xl hover:bg-slate-800 hover:text-white transition-all text-slate-400 group" id="nav-products">
+                <i data-lucide="tags" class="w-5 h-5 transition-transform group-hover:scale-110"></i><span class="text-sm font-medium">Product Prices</span>
+            </button>
+        </nav>
+        
+        <div class="p-4 mt-auto">
+             <button onclick="showHelpModal()" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-amber-400 hover:text-amber-300 transition-colors text-left text-xs font-semibold">
+                <i data-lucide="life-buoy" class="w-4 h-4"></i><span>Help & Guide</span>
+            </button>
+            <div class="mt-4 pt-4 border-t border-slate-800 text-[10px] text-center text-slate-600 font-mono">v17.0 Mobile</div>
+        </div>
+    </aside>
+
+    <div class="flex-1 flex flex-col h-screen relative w-full min-w-0 overflow-hidden bg-[#f1f5f9]">
+        <!-- HEADER -->
+        <header class="bg-white/80 backdrop-blur-md border-b border-slate-200 h-16 flex items-center justify-between px-4 sm:px-8 z-10 sticky top-0 flex-shrink-0">
+            <div class="flex items-center gap-4 flex-1">
+                <button onclick="toggleSidebar()" class="md:hidden text-slate-500 hover:text-indigo-600"><i data-lucide="menu" class="w-6 h-6"></i></button>
+                <h2 class="text-lg font-bold text-slate-800 hidden sm:block tracking-tight" id="pageTitle">Overview</h2>
+            </div>
+            
+            <div class="relative" onclick="event.stopPropagation()">
+                <button onclick="toggleAccountMenu()" class="flex items-center gap-3 focus:outline-none group">
+                    <div class="text-right hidden sm:block">
+                        <p class="text-xs font-bold text-slate-700 group-hover:text-indigo-600 transition-colors" id="currentAccountName">Main Account</p>
+                        <p class="text-[10px] font-medium text-emerald-500 flex items-center justify-end gap-1" id="connectionStatus">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Online
+                        </p>
+                    </div>
+                    <div class="h-9 w-9 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md border-2 border-white ring-2 ring-transparent group-hover:ring-indigo-100 transition-all">
+                        <span id="accountInitials">MA</span>
+                    </div>
+                    <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors"></i>
+                </button>
+
+                <div id="accountMenu" class="hidden absolute right-0 top-12 w-60 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50 fade-in ring-1 ring-slate-900/5">
+                    <div class="px-4 py-2 border-b border-slate-50 mb-1">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Switch Account</p>
+                    </div>
+                    <div id="accountList" class="max-h-60 overflow-y-auto"></div>
+                    <div class="border-t border-slate-50 mt-1 pt-1">
+                        <button onclick="openAddAccountModal()" class="w-full text-left px-4 py-2.5 text-sm text-indigo-600 font-medium hover:bg-indigo-50 flex items-center gap-2 transition-colors">
+                            <i data-lucide="plus-circle" class="w-4 h-4"></i> Add New Account
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 overflow-y-auto p-4 sm:p-8 relative">
+            
+            <!-- VIEW: DASHBOARD -->
+            <div id="view-dashboard" class="max-w-[1600px] mx-auto space-y-8 fade-in">
+                <!-- Mobile: 2 cols, Desktop: Adaptive -->
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4" id="stats-container"></div>
+                
+                <!-- Dashboard Search & Controls -->
+                <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-slate-200/60">
+                    <div class="w-full xl:w-auto flex flex-col sm:flex-row items-center gap-2 p-1">
+                        <!-- Main Search Input -->
+                        <div class="relative w-full sm:w-64 group">
+                            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors"></i>
+                            <input type="text" id="searchInput" placeholder="Search orders..." class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white transition-all placeholder:text-slate-400 font-medium h-10 sm:h-auto">
+                        </div>
+                        <div class="relative flex items-center h-10 w-full sm:w-auto">
+                            <select id="filterType" class="appearance-none w-full sm:w-auto pl-9 pr-8 py-2 h-full bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer hover:bg-slate-100 transition-colors">
+                                <option value="date">Order Date</option>
+                                <option value="shippingDate">Ship Date</option>
+                            </select>
+                            <i data-lucide="filter" class="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none"></i>
+                            <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400 absolute right-3 pointer-events-none"></i>
+                        </div>
+                        <div class="relative flex items-center w-full sm:w-auto h-10 group">
+                            <i data-lucide="calendar" class="h-4 w-4 text-slate-400 absolute left-3 z-10 group-hover:text-indigo-500 transition-colors"></i>
+                            <input type="text" id="dateFilter" placeholder="Filter by Date" class="pl-10 pr-8 py-2 h-full w-full sm:w-48 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer shadow-sm hover:border-slate-300 transition-all">
+                            <button id="clearFilterBtn" class="absolute right-2 text-slate-300 hover:text-rose-500 hidden transition-colors"><i data-lucide="x-circle" class="h-4 w-4"></i></button>
+                        </div>
+                    </div>
+                    <div class="w-full xl:w-auto flex gap-3 p-1">
+                        <button onclick="toggleForm()" id="addOrderBtn" class="flex-1 sm:flex-none px-5 h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md shadow-indigo-200 flex items-center justify-center gap-2 text-sm font-medium transition-all active:scale-95"><i data-lucide="plus" class="w-4 h-4"></i> <span>New Order</span></button>
+                        <button onclick="exportToExcel()" class="flex-1 sm:flex-none px-5 h-10 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg shadow-sm flex items-center justify-center gap-2 text-sm font-medium transition-all active:scale-95 group"><i data-lucide="sheet" class="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform"></i> <span id="exportText">Export</span></button>
+                    </div>
+                </div>
+
+                <div id="importArea" class="relative group cursor-pointer bg-gradient-to-br from-white to-slate-50 rounded-2xl border-2 border-dashed border-slate-300 hover:border-indigo-400 transition-all duration-300 p-8 text-center shadow-sm hover:shadow-md">
+                    <input type="file" id="pdfInput" accept=".pdf" class="hidden">
+                    <div class="flex flex-col items-center justify-center space-y-3 transition-transform duration-300 group-hover:-translate-y-1" id="dropZoneContent">
+                        <div class="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mb-1 group-hover:scale-110 transition-transform duration-300"><i data-lucide="upload-cloud" class="w-6 h-6 text-indigo-600"></i></div>
+                        <div><h3 class="text-sm font-bold text-slate-800">Import Meesho Invoice</h3><p class="text-xs text-slate-500 mt-1">Click or drag PDF here to auto-scan orders</p></div>
+                    </div>
+                </div>
+
+                <div id="orderForm" class="hidden bg-white p-6 sm:p-8 rounded-2xl shadow-xl border border-slate-100 fade-in relative overflow-hidden ring-1 ring-slate-900/5">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2"><div class="w-1 h-6 bg-indigo-500 rounded-full"></div>Manual Order Entry</h2>
+                        <button onclick="toggleForm()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                    <form id="newOrderForm" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                        <div class="space-y-1.5"><label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Date</label><input type="date" name="date" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"></div>
+                        <div class="space-y-1.5"><label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Order No</label><input type="text" name="orderNo" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"></div>
+                        <div class="space-y-1.5"><label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Customer</label><input type="text" name="customerName" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"></div>
+                        <div class="space-y-1.5"><label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Location</label><input type="text" name="location" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"></div>
+                        <div class="space-y-1.5"><label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">SKU</label><input type="text" name="sku" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" oninput="autoFillPrice(this.value)"></div>
+                        <div class="space-y-1.5 sm:col-span-2"><label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Description</label><input type="text" name="description" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"></div>
+                        <div class="space-y-1.5"><label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Cust. Pay (₹)</label><input type="number" step="0.01" name="amount" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"></div>
+                        <div class="space-y-1.5"><label class="text-[11px] font-bold text-indigo-600 uppercase tracking-wide">Earnings (₹)</label><input type="number" step="0.01" name="sellerPrice" id="formSellerPrice" required class="w-full px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg text-sm font-bold text-indigo-700 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"></div>
+                        <div class="space-y-1.5"><label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Payment</label><select name="payment" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"><option value="Prepaid">Prepaid</option><option value="COD">COD</option></select></div>
+                        <div class="space-y-1.5"><label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Ship Date</label><input type="date" name="shippingDate" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"></div>
+                        <div class="space-y-1.5 flex flex-col justify-end"><label class="flex items-center gap-3 cursor-pointer bg-slate-50 p-2 rounded-lg border border-slate-200 h-[38px] hover:bg-slate-100 transition-colors"><input type="checkbox" name="isPaid" class="custom-checkbox"><span class="text-sm font-semibold text-emerald-700">Payment Received?</span></label></div>
+                        <div class="sm:col-span-4 flex justify-end gap-3 mt-4 pt-4 border-t border-slate-100">
+                            <button type="button" onclick="toggleForm()" class="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors">Cancel</button>
+                            <button type="submit" class="bg-indigo-600 text-white font-semibold py-2.5 px-6 rounded-lg shadow-md shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2 text-sm"><i data-lucide="check" class="w-4 h-4"></i> Save Order</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- TABLE WRAPPER (HIDDEN ON MOBILE) -->
+                <div class="hidden md:block bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                    <div class="overflow-x-auto pb-2"> 
+                        <table class="w-full text-left text-sm min-w-[1300px]">
+                            <thead class="bg-slate-50/50 border-b border-slate-100">
+                                <tr>
+                                    <th class="p-5 w-[50px] text-center"><input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this.checked)" class="custom-checkbox"></th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px] tracking-wider w-[100px]">Date</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px] tracking-wider w-[120px]">Order ID</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px] tracking-wider w-[150px]">Customer</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px] tracking-wider w-[220px]">Product (SKU)</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px] tracking-wider text-right w-[90px]">Amount</th>
+                                    <th class="p-5 font-bold text-indigo-400 uppercase text-[10px] tracking-wider text-right w-[90px]">Earn</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px] tracking-wider text-center w-[160px]">Return Status</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px] tracking-wider text-center w-[100px]">Type</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px] tracking-wider text-center w-[120px]">Ship Date</th>
+                                    <th class="p-5 font-bold text-emerald-500 uppercase text-[10px] tracking-wider text-center w-[80px]">Status</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px] tracking-wider text-center w-[80px]">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ordersTableBody" class="divide-y divide-slate-50 text-slate-600 font-medium"><tr><td colspan="12" class="p-20 text-center text-slate-400 italic">Loading orders...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- MOBILE CARD VIEW (VISIBLE ON MOBILE) -->
+                <div id="mobileOrdersView" class="md:hidden space-y-4"></div>
+            </div>
+
+            <!-- VIEW: RETURNS SETTINGS -->
+            <div id="view-returns" class="max-w-[600px] mx-auto space-y-8 hidden-section fade-in">
+                <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-lg font-bold text-slate-800 mb-6 flex items-center gap-3"><div class="p-2 bg-orange-50 rounded-lg text-orange-600"><i data-lucide="corner-down-left" class="w-5 h-5"></i></div>Return Loss Configuration</h2>
+                    <p class="text-sm text-slate-500 mb-6">Set the loss amount incurred for different return types. These values will be subtracted from your total earnings when an order is marked as returned.</p>
+                    
+                    <div class="space-y-6">
+                        <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between gap-4">
+                            <div>
+                                <h3 class="font-bold text-slate-700 text-sm">Customer Return Loss</h3>
+                                <p class="text-xs text-slate-400">Loss amount when customer returns item (e.g. Shipping penalty)</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-slate-400 font-bold text-sm">₹</span>
+                                <input type="number" id="settingCustomerLoss" class="w-24 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-rose-600 focus:ring-2 focus:ring-indigo-500/20 outline-none text-right" value="161">
+                            </div>
+                        </div>
+
+                        <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between gap-4">
+                            <div>
+                                <h3 class="font-bold text-slate-700 text-sm">RTO Return Loss</h3>
+                                <p class="text-xs text-slate-400">Loss amount when item is undelivered (RTO)</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-slate-400 font-bold text-sm">₹</span>
+                                <input type="number" id="settingRtoLoss" class="w-24 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-orange-600 focus:ring-2 focus:ring-indigo-500/20 outline-none text-right" value="0">
+                            </div>
+                        </div>
+
+                        <button onclick="saveReturnSettings()" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-sm transition-all shadow-lg shadow-indigo-500/30 active:scale-95">Save Return Settings</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: PRODUCTS (Fixed Layout) -->
+            <div id="view-products" class="max-w-[1000px] mx-auto space-y-8 hidden-section fade-in">
+                <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-lg font-bold text-slate-800 mb-6 flex items-center gap-3"><div class="p-2 bg-indigo-50 rounded-lg text-indigo-600"><i data-lucide="tags" class="w-5 h-5"></i></div>Product Pricing</h2>
+                    
+                    <!-- Fixed Controls Container -->
+                    <div class="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between mb-6">
+                        <!-- Add Form -->
+                        <form id="productForm" class="flex flex-col md:flex-row gap-3 items-end w-full lg:w-auto flex-1">
+                            <div class="w-full md:flex-1"><label class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1 block">SKU Code</label><input type="text" id="prodSku" placeholder="e.g. ARpZasvA" required class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none bg-white"></div>
+                            <div class="w-full md:w-32"><label class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1 block">Earnings (₹)</label><input type="number" id="prodPrice" placeholder="0.00" required class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none bg-white"></div>
+                            <button type="submit" class="w-full md:w-auto px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm font-semibold text-sm transition-all active:scale-95 whitespace-nowrap h-[42px] flex items-center justify-center">Add Product</button>
+                        </form>
+                        
+                        <!-- Search Product -->
+                        <div class="relative w-full lg:w-64 group">
+                            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors"></i>
+                            <input type="text" id="productSearchInput" placeholder="Search products..." oninput="productSearchTerm=this.value; renderProducts();" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white transition-all placeholder:text-slate-400 font-medium h-[42px]">
+                        </div>
+                    </div>
+
+                    <div class="overflow-hidden border border-slate-100 rounded-xl">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-slate-500">
+                                <tr>
+                                    <th class="p-4 w-[50px] text-center"><input type="checkbox" id="selectProductAllCheckbox" onclick="toggleProductSelectAll(this.checked)" class="custom-checkbox"></th>
+                                    <th class="p-4 font-semibold text-xs uppercase tracking-wide">SKU Code</th>
+                                    <th class="p-4 font-semibold text-xs uppercase tracking-wide text-right">My Earnings</th>
+                                    <th class="p-4 font-semibold text-xs uppercase tracking-wide text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="productsTableBody" class="divide-y divide-slate-50"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- BULK ACTION BAR (Dashboard) -->
+    <div id="bulkActionBar" class="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-[#0f172a] text-white px-2 py-2 rounded-2xl shadow-2xl flex items-center gap-2 hidden z-40 slide-up border border-slate-700/50 pr-4">
+        <div class="flex items-center gap-3 pl-4 pr-4 border-r border-slate-700"><div class="bg-indigo-500 text-[10px] font-bold rounded-md w-5 h-5 flex items-center justify-center" id="selectedCount">0</div><span class="text-xs font-medium text-slate-300">Selected</span></div>
+        <button onclick="bulkMarkPaid()" class="hover:bg-slate-800 text-emerald-400 font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"><i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Mark Paid</button>
+        <button onclick="bulkDelete()" class="hover:bg-slate-800 text-rose-400 font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete</button>
+        <button onclick="deselectAll()" class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-700 text-slate-400 transition-colors ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+    </div>
+
+    <!-- BULK ACTION BAR (Products) -->
+    <div id="productBulkActionBar" class="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-[#0f172a] text-white px-2 py-2 rounded-2xl shadow-2xl flex items-center gap-2 hidden z-40 slide-up border border-slate-700/50 pr-4">
+        <div class="flex items-center gap-3 pl-4 pr-4 border-r border-slate-700"><div class="bg-indigo-500 text-[10px] font-bold rounded-md w-5 h-5 flex items-center justify-center" id="selectedProductCount">0</div><span class="text-xs font-medium text-slate-300">Selected</span></div>
+        <button onclick="bulkDeleteProducts()" class="hover:bg-slate-800 text-rose-400 font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete Selected</button>
+        <button onclick="deselectAllProducts()" class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-700 text-slate-400 transition-colors ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+    </div>
+
+    <!-- GLOBAL SKU DROPDOWN -->
+    <div id="globalSkuDropdown" class="hidden fixed z-50 bg-white rounded-xl shadow-2xl border border-slate-100 w-72 text-sm flex flex-col max-h-[320px] ring-1 ring-slate-900/5" onclick="event.stopPropagation()">
+        <div class="p-3 border-b border-slate-50 bg-white rounded-t-xl sticky top-0 z-10">
+            <div class="relative"><i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400"></i><input type="text" id="dropdownSearch" placeholder="Find SKU..." class="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium" onkeyup="filterSkuOptions(this.value)"></div>
+        </div>
+        <div id="dropdownList" class="overflow-y-auto dropdown-scroll flex-1 p-1.5 space-y-1"></div>
+    </div>
+
+    <!-- NEW ACCOUNT MODAL -->
+    <div id="addAccountModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 relative fade-in border border-slate-100">
+            <button onclick="document.getElementById('addAccountModal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            <h3 class="text-lg font-bold text-slate-900 mb-4">Add New Account</h3>
+            <div class="space-y-4">
+                <div><label class="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Account Name</label><input type="text" id="newAccountName" placeholder="e.g. Meesho 2" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"></div>
+                <button onclick="createNewAccount()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-xl transition-colors">Create Account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EDIT PRODUCT MODAL -->
+    <div id="editProductModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 relative fade-in border border-slate-100">
+            <button onclick="document.getElementById('editProductModal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            <h3 class="text-lg font-bold text-slate-900 mb-4">Edit Product</h3>
+            <form id="editProductForm" class="space-y-4">
+                <input type="hidden" id="editOldSku">
+                <div><label class="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">SKU Code</label><input type="text" id="editNewSku" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"></div>
+                <div><label class="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Earnings (₹)</label><input type="number" id="editNewPrice" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"></div>
+                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-xl transition-colors">Update Product</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- HELP MODAL -->
+    <div id="helpModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative fade-in border border-slate-100">
+            <button onclick="document.getElementById('helpModal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            <div class="mb-4"><div class="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center mb-3"><i data-lucide="book-open" class="w-5 h-5 text-amber-500"></i></div><h3 class="text-lg font-bold text-slate-900">Quick Guide</h3></div>
+            <div class="space-y-3 text-sm text-slate-600">
+                <div class="p-3 bg-slate-50 rounded-lg flex gap-3"><span class="font-bold text-indigo-600">1</span><p>Go to <span class="font-semibold text-slate-800">Return Settings</span> to configure loss amounts for Customer Returns and RTOs.</p></div>
+                <div class="p-3 bg-slate-50 rounded-lg flex gap-3"><span class="font-bold text-indigo-600">2</span><p>In the Dashboard, use the <span class="font-semibold text-slate-800">Return</span> column dropdown to mark orders as returned. The earnings will automatically update to reflect the loss.</p></div>
+                <div class="p-3 bg-slate-50 rounded-lg flex gap-3"><span class="font-bold text-indigo-600">3</span><p>Use "Product Prices" to manage SKUs. Changing a price updates all linked orders.</p></div>
+            </div>
+            <button onclick="document.getElementById('helpModal').classList.add('hidden')" class="w-full mt-6 bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2.5 rounded-xl transition-colors">Got it</button>
+        </div>
+    </div>
+
+    <script>
+        let firebaseConfig = null;
+        try { if (typeof __firebase_config !== 'undefined') firebaseConfig = JSON.parse(__firebase_config); } catch(e) {}
+        let db, auth, user, appId;
+        let isOnline = false;
+        
+        let accounts = ["Main Account"];
+        let currentAccount = "Main Account";
+        
+        let orders = [];
+        let products = {}; 
+        let returnSettings = { customer: 161, rto: 0 }; // Default settings
+        let filterDate = "";
+        let filterType = "date";
+        let searchTerm = "";
+        let currentActiveOrderId = null;
+        let currentActiveSku = null;
+        let orderUnsubscribe = null;
+        
+        let productSearchTerm = "";
+
+        const fp = flatpickr("#dateFilter", { dateFormat: "Y-m-d", disableMobile: "true", onChange: (sd, ds) => { filterDate = ds; updateClearButton(ds); renderTable(); } });
+        function updateClearButton(val) { document.getElementById('clearFilterBtn').classList.toggle('hidden', !val); }
+
+        function initApp() {
+            lucide.createIcons();
+            const legacyOrders = localStorage.getItem('my_orders_db');
+            const legacyProducts = localStorage.getItem('my_products_db');
+            if (legacyOrders && !localStorage.getItem('orders_Main Account')) { localStorage.setItem('orders_Main Account', legacyOrders); localStorage.removeItem('my_orders_db'); }
+            if (legacyProducts && !localStorage.getItem('products_Main Account')) { localStorage.setItem('products_Main Account', legacyProducts); localStorage.removeItem('my_products_db'); }
+
+            const savedAccounts = localStorage.getItem('app_accounts');
+            if (savedAccounts) accounts = JSON.parse(savedAccounts);
+            const savedCurrent = localStorage.getItem('app_current_account');
+            if (savedCurrent && accounts.includes(savedCurrent)) currentAccount = savedCurrent;
+            
+            updateAccountUI();
+            loadAccountData();
+
+            if (firebaseConfig) {
+                firebase.initializeApp(firebaseConfig);
+                db = firebase.firestore();
+                auth = firebase.auth();
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                isOnline = true;
+                document.getElementById('connectionStatus').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Online';
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) auth.signInWithCustomToken(__initial_auth_token);
+                else auth.signInAnonymously();
+                auth.onAuthStateChanged((u) => { 
+                    if (u) { 
+                        user = u; 
+                        setupFirebaseListener();
+                        // Load remote return settings
+                        db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('settings').doc('returns').get().then(doc => {
+                            if (doc.exists) { returnSettings = doc.data(); updateReturnSettingsUI(); }
+                        });
+                    } 
+                });
+            } else {
+                document.getElementById('connectionStatus').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-orange-400"></span> Local';
+            }
+            document.querySelector('input[name="date"]').value = new Date().toISOString().split('T')[0];
+            const skuInput = document.querySelector('input[name="sku"]');
+            if(skuInput) skuInput.addEventListener('input', function() { const p = lookupPrice(this.value); if(p) document.getElementById('formSellerPrice').value = p; });
+            document.getElementById('clearFilterBtn').addEventListener('click', (e) => { e.stopPropagation(); fp.clear(); filterDate = ""; updateClearButton(""); renderTable(); });
+        }
+
+        // --- ACCOUNT MANAGEMENT ---
+        function updateAccountUI() {
+            document.getElementById('currentAccountName').innerText = currentAccount;
+            document.getElementById('sidebarStoreName').innerText = currentAccount;
+            document.getElementById('accountInitials').innerText = currentAccount.substring(0, 2).toUpperCase();
+            const list = document.getElementById('accountList'); list.innerHTML = '';
+            accounts.forEach(acc => {
+                const isActive = acc === currentAccount;
+                const div = document.createElement('div');
+                div.className = `px-4 py-2.5 text-sm cursor-pointer flex items-center justify-between group transition-colors ${isActive ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}`;
+                div.innerHTML = `<span>${acc}</span>${isActive ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}`;
+                div.onclick = () => switchAccount(acc);
+                list.appendChild(div);
+            });
+            lucide.createIcons();
+        }
+
+        function switchAccount(accName) {
+            currentAccount = accName; localStorage.setItem('app_current_account', currentAccount);
+            updateAccountUI(); document.getElementById('accountMenu').classList.add('hidden');
+            loadAccountData(); if (isOnline && user) setupFirebaseListener();
+        }
+        function toggleAccountMenu() { document.getElementById('accountMenu').classList.toggle('hidden'); }
+        function openAddAccountModal() { document.getElementById('accountMenu').classList.add('hidden'); document.getElementById('addAccountModal').classList.remove('hidden'); document.getElementById('newAccountName').value = ''; document.getElementById('newAccountName').focus(); }
+        function createNewAccount() {
+            const name = document.getElementById('newAccountName').value.trim();
+            if (name && !accounts.includes(name)) { accounts.push(name); localStorage.setItem('app_accounts', JSON.stringify(accounts)); switchAccount(name); document.getElementById('addAccountModal').classList.add('hidden'); } else if (accounts.includes(name)) { alert('Account already exists!'); }
+        }
+        function closeAllDropdowns(e) { closeGlobalDropdownOutside(e); if (!e.target.closest('#accountDropdownContainer') && !e.target.closest('.relative')) { document.getElementById('accountMenu')?.classList.add('hidden'); } }
+
+        function loadAccountData() {
+            const savedProds = localStorage.getItem(`products_${currentAccount}`); products = savedProds ? JSON.parse(savedProds) : {}; renderProducts();
+            const savedOrders = localStorage.getItem(`orders_${currentAccount}`); orders = savedOrders ? JSON.parse(savedOrders) : []; renderTable();
+            const savedSettings = localStorage.getItem(`return_settings_${currentAccount}`);
+            if (savedSettings) returnSettings = JSON.parse(savedSettings);
+            updateReturnSettingsUI();
+        }
+        function setupFirebaseListener() {
+            if (orderUnsubscribe) orderUnsubscribe();
+            orderUnsubscribe = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').onSnapshot((snapshot) => {
+                orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                orders.sort((a, b) => new Date(b.date) - new Date(a.date)); renderTable();
+            });
+        }
+        function saveLocal() { localStorage.setItem(`orders_${currentAccount}`, JSON.stringify(orders)); renderTable(); }
+
+        // --- CORE UI ---
+        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('sidebar-open'); document.getElementById('sidebarOverlay').classList.toggle('hidden'); }
+        function switchTab(tab) {
+            document.querySelectorAll('.hidden-section').forEach(el => el.classList.add('hidden-section')); // Keep hidden
+            ['view-dashboard', 'view-returns', 'view-products'].forEach(id => document.getElementById(id).classList.add('hidden-section'));
+            
+            // Reset nav styles
+            ['nav-dashboard', 'nav-returns', 'nav-products'].forEach(id => {
+                const el = document.getElementById(id);
+                el.classList.remove('bg-indigo-600', 'text-white', 'shadow-md');
+                el.classList.add('text-slate-400', 'hover:bg-slate-800');
+            });
+
+            // Activate Tab
+            document.getElementById('view-' + tab).classList.remove('hidden-section');
+            const navBtn = document.getElementById('nav-' + tab);
+            navBtn.classList.remove('text-slate-400', 'hover:bg-slate-800');
+            navBtn.classList.add('bg-indigo-600', 'text-white', 'shadow-md');
+
+            // Header Title
+            if(tab === 'dashboard') { document.getElementById('pageTitle').innerText = 'Overview'; renderTable(); }
+            else if(tab === 'returns') { document.getElementById('pageTitle').innerText = 'Return Settings'; }
+            else { document.getElementById('pageTitle').innerText = 'Products'; renderProducts(); }
+            
+            document.getElementById('sidebar').classList.remove('sidebar-open'); document.getElementById('sidebarOverlay').classList.add('hidden');
+        }
+
+        // --- RETURN SETTINGS LOGIC ---
+        function updateReturnSettingsUI() {
+            document.getElementById('settingCustomerLoss').value = returnSettings.customer || 161;
+            document.getElementById('settingRtoLoss').value = returnSettings.rto || 0;
+        }
+
+        function saveReturnSettings() {
+            const cLoss = parseFloat(document.getElementById('settingCustomerLoss').value) || 0;
+            const rLoss = parseFloat(document.getElementById('settingRtoLoss').value) || 0;
+            returnSettings = { customer: cLoss, rto: rLoss };
+            
+            if (isOnline) {
+                db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('settings').doc('returns').set(returnSettings);
+            }
+            localStorage.setItem(`return_settings_${currentAccount}`, JSON.stringify(returnSettings));
+            
+            alert('Settings Saved!');
+            renderTable(); // Re-calculate earnings
+        }
+
+        function getEarnings(order) {
+            // Logic: If Returned, Earning = -Loss. If Active, Earning = SellerPrice.
+            if (order.returnStatus === 'Customer Return') return -(returnSettings.customer || 161);
+            if (order.returnStatus === 'RTO') return -(returnSettings.rto || 0);
+            
+            const p = order.sellerPrice || lookupPrice(order.sku);
+            return parseFloat(p) || 0;
+        }
+
+        function updateReturnStatus(id, status) {
+            if (isOnline) {
+                db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(id).update({ returnStatus: status });
+            } else {
+                const o = orders.find(x => x.id === id);
+                if (o) { o.returnStatus = status; saveLocal(); }
+            }
+        }
+
+        // --- PRODUCTS LOGIC ---
+        function renderProducts() {
+            const tbody = document.getElementById('productsTableBody'); tbody.innerHTML = '';
+            document.getElementById('selectProductAllCheckbox').checked = false;
+            updateProductBulkState();
+
+            const allSkus = Object.keys(products).sort();
+            const filteredSkus = productSearchTerm ? allSkus.filter(s => s.toLowerCase().includes(productSearchTerm.toLowerCase())) : allSkus;
+
+            if (filteredSkus.length === 0) { tbody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-slate-400 italic">No products found.</td></tr>`; return; }
+
+            filteredSkus.forEach(sku => {
+                const row = document.createElement('tr');
+                row.className = "hover:bg-slate-50 transition-colors group";
+                row.innerHTML = `
+                    <td class="p-4 text-center border-b border-slate-50"><input type="checkbox" value="${sku}" class="custom-checkbox product-checkbox" onclick="updateProductBulkState()"></td>
+                    <td class="p-4 font-mono text-xs font-bold text-slate-700 border-b border-slate-50">${sku}</td>
+                    <td class="p-4 text-right font-bold text-emerald-600 border-b border-slate-50">₹${products[sku]}</td>
+                    <td class="p-4 text-center border-b border-slate-50">
+                        <div class="flex items-center justify-center gap-2">
+                            <button onclick="openEditProductModal('${sku}')" class="text-slate-400 hover:text-indigo-500 p-2 hover:bg-indigo-50 rounded-lg transition-colors"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                            <button onclick="deleteProduct('${sku}')" class="text-slate-400 hover:text-rose-500 p-2 hover:bg-rose-50 rounded-lg transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </div>
+                    </td>`;
+                tbody.appendChild(row);
+            });
+            lucide.createIcons();
+        }
+
+        document.getElementById('productForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const sku = document.getElementById('prodSku').value.trim(); const price = document.getElementById('prodPrice').value;
+            if(sku && price) {
+                products[sku] = price; localStorage.setItem(`products_${currentAccount}`, JSON.stringify(products));
+                renderProducts(); updateAllOrderPrices(); renderTable(); document.getElementById('productForm').reset();
+            }
+        });
+
+        // --- PRODUCT EDIT ---
+        function openEditProductModal(sku) {
+            document.getElementById('editOldSku').value = sku;
+            document.getElementById('editNewSku').value = sku;
+            document.getElementById('editNewPrice').value = products[sku];
+            document.getElementById('editProductModal').classList.remove('hidden');
+        }
+
+        document.getElementById('editProductForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const oldSku = document.getElementById('editOldSku').value;
+            const newSku = document.getElementById('editNewSku').value.trim();
+            const newPrice = document.getElementById('editNewPrice').value;
+            
+            if(newSku && newPrice) {
+                if(oldSku !== newSku) { delete products[oldSku]; }
+                products[newSku] = newPrice;
+                localStorage.setItem(`products_${currentAccount}`, JSON.stringify(products));
+                
+                // Smart update orders if price changed (simplest approach: updateAll runs on price check logic)
+                updateAllOrderPrices(); 
+                renderProducts();
+                renderTable();
+                
+                document.getElementById('editProductModal').classList.add('hidden');
+            }
+        });
+
+        // --- PRODUCT BULK ACTIONS ---
+        function toggleProductSelectAll(checked) { document.querySelectorAll('.product-checkbox').forEach(cb => cb.checked = checked); updateProductBulkState(); }
+        function updateProductBulkState() {
+            const count = document.querySelectorAll('.product-checkbox:checked').length;
+            const bar = document.getElementById('productBulkActionBar');
+            document.getElementById('selectedProductCount').innerText = count;
+            if (count > 0) bar.classList.remove('hidden'); else { bar.classList.add('hidden'); document.getElementById('selectProductAllCheckbox').checked = false; }
+        }
+        function deselectAllProducts() { document.querySelectorAll('.product-checkbox').forEach(cb => cb.checked = false); updateProductBulkState(); }
+        
+        function bulkDeleteProducts() {
+            const selectedSkus = Array.from(document.querySelectorAll('.product-checkbox:checked')).map(cb => cb.value);
+            if(selectedSkus.length === 0 || !confirm(`Delete ${selectedSkus.length} products?`)) return;
+            selectedSkus.forEach(sku => delete products[sku]);
+            localStorage.setItem(`products_${currentAccount}`, JSON.stringify(products));
+            renderProducts();
+            deselectAllProducts();
+        }
+
+        function deleteProduct(sku) { 
+            if(confirm('Remove ' + sku + '?')) { delete products[sku]; localStorage.setItem(`products_${currentAccount}`, JSON.stringify(products)); renderProducts(); updateAllOrderPrices(); renderTable(); } 
+        }
+
+        function lookupPrice(importedSku) {
+            if (!importedSku) return 0; if (products[importedSku]) return products[importedSku];
+            const normalizedImport = importedSku.trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            for (let key of Object.keys(products)) { if (key.trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === normalizedImport) return products[key]; }
+            return 0;
+        }
+        
+        function updateAllOrderPrices() {
+            let updated = false;
+            orders.forEach(order => {
+                const price = products[order.sku] || lookupPrice(order.sku);
+                if (price && (!order.sellerPrice || order.sellerPrice != price)) {
+                    order.sellerPrice = price; updated = true;
+                    if (isOnline && order.id) { db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(order.id).update({ sellerPrice: price }); }
+                }
+            });
+            if (updated && !isOnline) saveLocal();
+        }
+        
+        function autoFillPrice(val) { const p = lookupPrice(val); if(p) document.getElementById('formSellerPrice').value = p; }
+
+        function openGlobalDropdown(event, orderId, currentSku) {
+            event.stopPropagation(); currentActiveOrderId = orderId; currentActiveSku = currentSku;
+            const btn = event.currentTarget; const rect = btn.getBoundingClientRect(); const dropdown = document.getElementById('globalSkuDropdown');
+            const spaceBelow = window.innerHeight - rect.bottom; dropdown.style.top = (spaceBelow < 320 ? (rect.top + window.scrollY - 325) : (rect.bottom + window.scrollY + 8)) + 'px';
+            dropdown.style.left = rect.left + 'px'; dropdown.classList.remove('hidden');
+            document.getElementById('dropdownSearch').value = ""; document.getElementById('dropdownSearch').focus(); renderSkuOptions(""); lucide.createIcons();
+        }
+        function closeGlobalDropdown() { document.getElementById('globalSkuDropdown').classList.add('hidden'); currentActiveOrderId = null; }
+        function closeGlobalDropdownOutside(event) { if (!document.getElementById('globalSkuDropdown').classList.contains('hidden')) closeGlobalDropdown(); }
+
+        function renderSkuOptions(filterText) {
+            const list = document.getElementById('dropdownList'); list.innerHTML = '';
+            const normalizedFilter = filterText.toLowerCase();
+            const isKnownProduct = products.hasOwnProperty(currentActiveSku);
+            if (!isKnownProduct && currentActiveSku && currentActiveSku.toLowerCase().includes(normalizedFilter)) {
+                const item = document.createElement('div'); item.className = "px-3 py-2.5 mx-1 cursor-pointer hover:bg-rose-50 text-rose-600 font-bold rounded-lg flex items-center gap-2 transition-colors";
+                item.innerHTML = `<i data-lucide="alert-circle" class="w-4 h-4"></i><span class="flex-1">${currentActiveSku} <span class="text-[10px] opacity-70 ml-1 font-normal uppercase">Imported</span></span>`;
+                item.onclick = () => handleSkuSelection(currentActiveSku); list.appendChild(item);
+            }
+            Object.keys(products).sort().forEach(sku => {
+                if (sku.toLowerCase().includes(normalizedFilter)) {
+                    const item = document.createElement('div'); const isSelected = sku === currentActiveSku;
+                    item.className = `px-3 py-2.5 mx-1 cursor-pointer flex items-center gap-2 rounded-lg transition-all ${isSelected ? 'bg-indigo-50 text-indigo-700 font-bold ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`;
+                    item.innerHTML = `<span class="flex-1 truncate">${sku}</span><span class="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">₹${products[sku]}</span>${isSelected ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}`;
+                    item.onclick = () => handleSkuSelection(sku); list.appendChild(item);
+                }
+            });
+        }
+        function filterSkuOptions(val) { renderSkuOptions(val); lucide.createIcons(); }
+        function handleSkuSelection(newSku) {
+            if (!currentActiveOrderId) return;
+            const order = orders.find(o => o.id === currentActiveOrderId);
+            if (order) {
+                order.sku = newSku; const price = products[newSku] || 0; order.sellerPrice = price;
+                if (isOnline) { db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(currentActiveOrderId).update({ sku: newSku, sellerPrice: price }); }
+                else { saveLocal(); renderTable(); }
+            }
+            closeGlobalDropdown();
+        }
+
+        function toggleSelectAll(checked) { document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = checked); updateBulkState(); }
+        function updateBulkState() {
+            const count = document.querySelectorAll('.row-checkbox:checked').length; const bar = document.getElementById('bulkActionBar');
+            document.getElementById('selectedCount').innerText = count; if (count > 0) bar.classList.remove('hidden'); else { bar.classList.add('hidden'); document.getElementById('selectAllCheckbox').checked = false; }
+        }
+        function deselectAll() { document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = false); updateBulkState(); }
+        function getSelectedIds() { return Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value); }
+        function bulkMarkPaid() {
+            const ids = getSelectedIds(); if(ids.length === 0 || !confirm(`Mark ${ids.length} orders as Paid?`)) return;
+            if (isOnline) { const batch = db.batch(); ids.forEach(id => { const ref = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(id); batch.update(ref, { isPaid: true }); }); batch.commit().then(() => deselectAll()); }
+            else { orders.forEach(o => { if (ids.includes(o.id)) o.isPaid = true; }); saveLocal(); deselectAll(); }
+        }
+        function bulkDelete() {
+            const ids = getSelectedIds(); if(ids.length === 0 || !confirm(`Delete ${ids.length} orders permanently?`)) return;
+            if (isOnline) { const batch = db.batch(); ids.forEach(id => { const ref = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(id); batch.delete(ref); }); batch.commit().then(() => deselectAll()); }
+            else { orders = orders.filter(o => !ids.includes(o.id)); saveLocal(); deselectAll(); }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('ordersTableBody'); 
+            const mobileView = document.getElementById('mobileOrdersView');
+            tbody.innerHTML = '';
+            mobileView.innerHTML = '';
+            
+            document.getElementById('selectAllCheckbox').checked = false; document.getElementById('bulkActionBar').classList.add('hidden'); 
+            let d = orders; if (filterDate) { const f = filterType === 'date' ? 'date' : 'shippingDate'; d = d.filter(o => o[f] === filterDate); }
+            if (searchTerm) { const t = searchTerm.toLowerCase(); d = d.filter(o => (o.customerName||'').toLowerCase().includes(t) || (o.orderNo||'').toLowerCase().includes(t) || (o.sku||'').toLowerCase().includes(t)); }
+            
+            renderStats(d); // Update Stats based on filtered data (calculated earnings included)
+            
+            if (d.length === 0) { 
+                const emptyState = `<tr><td colspan="12" class="p-20 text-center"><div class="flex flex-col items-center justify-center opacity-50"><i data-lucide="package-open" class="w-12 h-12 mb-3 stroke-1"></i><p class="text-sm">No orders found</p></div></td></tr>`;
+                tbody.innerHTML = emptyState;
+                mobileView.innerHTML = `<div class="p-10 text-center flex flex-col items-center justify-center opacity-50"><i data-lucide="package-open" class="w-12 h-12 mb-3 stroke-1"></i><p class="text-sm">No orders found</p></div>`;
+                return; 
+            }
+
+            d.forEach(o => {
+                const isPaid = o.isPaid;
+                const isKnownProduct = products.hasOwnProperty(o.sku); 
+                const lookedUpPrice = lookupPrice(o.sku); 
+                
+                // Ensure base sellerPrice is up to date if SKU exists
+                if (!o.returnStatus || o.returnStatus === 'None') {
+                     const myEarnings = o.sellerPrice || lookedUpPrice || 0;
+                     if (myEarnings > 0 && o.sellerPrice != myEarnings) { o.sellerPrice = myEarnings; if(isOnline && o.id) db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(o.id).update({ sellerPrice: myEarnings }); else if(!isOnline) saveLocal(); }
+                }
+
+                // Calculate display earning (considering returns)
+                const finalEarning = getEarnings(o);
+                let earningsClass = "text-amber-500";
+                if (finalEarning > 0) earningsClass = "text-indigo-600 font-bold";
+                else if (finalEarning < 0) earningsClass = "text-rose-600 font-bold";
+
+                const btnClass = isKnownProduct ? "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:ring-2 hover:ring-indigo-100 hover:text-indigo-700" : "bg-white text-rose-500 border-rose-200 hover:border-rose-300 hover:bg-rose-50";
+                
+                // Logic for Return Dropdown styling - refined in v16.2
+                let returnWrapperClass = "bg-white border-slate-200 text-slate-600 font-medium hover:border-indigo-400 hover:text-indigo-600 transition-colors shadow-sm";
+                let returnIconClass = "text-slate-400 group-hover/ret:text-indigo-500";
+                
+                if (o.returnStatus === 'Customer Return') {
+                    returnWrapperClass = "bg-rose-50 border-rose-200 text-rose-700 font-bold shadow-sm shadow-rose-100 ring-1 ring-rose-200/50";
+                    returnIconClass = "text-rose-500";
+                } else if (o.returnStatus === 'RTO') {
+                    returnWrapperClass = "bg-orange-50 border-orange-200 text-orange-700 font-bold shadow-sm shadow-orange-100 ring-1 ring-orange-200/50";
+                    returnIconClass = "text-orange-500";
+                }
+
+                // 1. Desktop Row
+                const row = document.createElement('tr');
+                row.className = `group transition-all hover:bg-slate-50 border-b border-slate-50 ${isPaid ? 'bg-emerald-50/30' : ''}`;
+                row.innerHTML = `<td class="p-5 text-center"><input type="checkbox" value="${o.id}" class="custom-checkbox row-checkbox" onclick="updateBulkState()"></td><td class="p-5 align-top text-xs font-semibold text-slate-500">${o.date}</td><td class="p-5 align-top text-xs font-mono text-slate-600 truncate" title="${o.orderNo}">${o.orderNo}</td><td class="p-5 align-top text-xs font-semibold text-slate-700 truncate" title="${o.customerName}\n${o.location}">${o.customerName}</td><td class="p-5 align-top"><button onclick="openGlobalDropdown(event, '${o.id}', '${o.sku}')" class="w-full text-left text-xs border rounded-lg px-3 py-2 shadow-sm transition-all flex items-center justify-between group/btn ${btnClass}"><span class="truncate font-bold mr-2">${o.sku}</span><i data-lucide="chevron-down" class="w-3 h-3 opacity-30 group-hover/btn:opacity-100"></i></button></td><td class="p-5 align-top text-right text-xs font-bold text-slate-600">₹${o.amount}</td><td class="p-5 align-top text-right text-xs ${earningsClass}">₹${finalEarning}</td><td class="p-5 align-top text-center"><div class="relative group/ret w-[160px]"><select onchange="updateReturnStatus('${o.id}', this.value)" class="appearance-none w-full pl-3 pr-8 py-2 text-xs border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer ${returnWrapperClass}"><option value="None" ${!o.returnStatus || o.returnStatus === 'None' ? 'selected' : ''} class="bg-white text-slate-600">🟢 Active Order</option><option value="Customer Return" ${o.returnStatus === 'Customer Return' ? 'selected' : ''} class="bg-rose-50 text-rose-700">🔴 Customer Return</option><option value="RTO" ${o.returnStatus === 'RTO' ? 'selected' : ''} class="bg-orange-50 text-orange-700">🟠 RTO Return</option></select><i data-lucide="chevron-down" class="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none transition-transform ${returnIconClass}"></i></div></td><td class="p-5 align-top text-center"><span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${o.payment === 'Prepaid' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-orange-50 text-orange-700 border-orange-100'}">${o.payment}</span></td><td class="p-5 align-top"><input type="date" value="${o.shippingDate || ''}" onchange="updateShipDate('${o.id}', this.value)" class="text-[11px] border-none bg-transparent hover:bg-white rounded p-1 w-full text-center text-slate-500 font-medium cursor-pointer focus:ring-1 focus:ring-indigo-200"></td><td class="p-5 align-top text-center"><div class="flex justify-center"><label class="cursor-pointer relative"><input type="checkbox" ${o.isPaid ? 'checked' : ''} onchange="togglePaid('${o.id}', this.checked)" class="sr-only peer"><div class="w-8 h-4 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[0px] after:left-[0px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div></label></div></td><td class="p-5 align-top text-center"><button onclick="deleteOrder('${o.id}')" class="text-slate-300 hover:text-rose-500 transition-colors p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button></td>`;
+                tbody.appendChild(row);
+
+                // 2. Mobile Card
+                const card = document.createElement('div');
+                card.className = `bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative ${isPaid ? 'ring-1 ring-emerald-100 bg-emerald-50/20' : ''}`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-3 pb-3 border-b border-slate-50">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="text-xs font-bold text-slate-400">${o.date}</span>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${o.payment === 'Prepaid' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-orange-50 text-orange-700 border-orange-100'}">${o.payment}</span>
+                            </div>
+                            <div class="text-[10px] font-mono text-slate-400 truncate max-w-[150px]">#${o.orderNo}</div>
+                        </div>
+                        <label class="cursor-pointer relative"><input type="checkbox" ${o.isPaid ? 'checked' : ''} onchange="togglePaid('${o.id}', this.checked)" class="sr-only peer"><div class="w-8 h-4 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[0px] after:left-[0px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div></label>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <div>
+                            <div class="text-sm font-bold text-slate-800 mb-0.5 line-clamp-1">${o.customerName}</div>
+                            <button onclick="openGlobalDropdown(event, '${o.id}', '${o.sku}')" class="w-full text-left text-xs border rounded-lg px-3 py-2 mt-1 shadow-sm transition-all flex items-center justify-between group/btn ${btnClass}">
+                                <span class="truncate font-bold mr-2">${o.sku}</span><i data-lucide="chevron-down" class="w-3 h-3 opacity-30 group-hover/btn:opacity-100"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-slate-50 p-2 rounded-lg text-center border border-slate-100">
+                                <div class="text-[10px] font-bold text-slate-400 uppercase">Cust. Pay</div>
+                                <div class="text-sm font-bold text-slate-700">₹${o.amount}</div>
+                            </div>
+                            <div class="bg-slate-50 p-2 rounded-lg text-center border border-slate-100">
+                                <div class="text-[10px] font-bold text-slate-400 uppercase">My Earn</div>
+                                <div class="text-sm font-bold ${earningsClass}">₹${finalEarning}</div>
+                            </div>
+                        </div>
+
+                        <div class="relative group/ret w-full">
+                            <select onchange="updateReturnStatus('${o.id}', this.value)" class="appearance-none w-full pl-3 pr-8 py-2.5 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer ${returnWrapperClass}">
+                                <option value="None" ${!o.returnStatus || o.returnStatus === 'None' ? 'selected' : ''} class="bg-white text-slate-600">🟢 Active Order</option>
+                                <option value="Customer Return" ${o.returnStatus === 'Customer Return' ? 'selected' : ''} class="bg-rose-50 text-rose-700">🔴 Customer Return</option>
+                                <option value="RTO" ${o.returnStatus === 'RTO' ? 'selected' : ''} class="bg-orange-50 text-orange-700">🟠 RTO Return</option>
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none transition-transform ${returnIconClass}"></i>
+                        </div>
+
+                        <div class="flex items-center gap-2 pt-2 border-t border-slate-50">
+                            <input type="date" value="${o.shippingDate || ''}" onchange="updateShipDate('${o.id}', this.value)" class="flex-1 text-xs border bg-white rounded-lg px-2 py-2 text-slate-500 font-medium cursor-pointer focus:ring-2 focus:ring-indigo-200 outline-none">
+                            <button onclick="deleteOrder('${o.id}')" class="px-3 py-2 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-100 transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </div>
+                    </div>
+                `;
+                mobileView.appendChild(card);
+            });
+            lucide.createIcons();
+        }
+        function updateShipDate(id, d) { if(isOnline) db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(id).update({shippingDate:d}); else { orders.find(o=>o.id===id).shippingDate=d; saveLocal(); } }
+        function deleteOrder(id) { if(!confirm('Delete?')) return; if(isOnline) db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(id).delete(); else { orders = orders.filter(o=>o.id!==id); saveLocal(); } }
+        
+        function renderStats(data) {
+            const d = data || orders; 
+            const tot = d.length; 
+            const rev = d.reduce((s, o) => s + (parseFloat(o.amount) || 0), 0); 
+            
+            // Calc earnings using the new smart function that subtracts losses
+            const earn = d.reduce((s, o) => s + getEarnings(o), 0); 
+            
+            const pre = d.filter(o => o.payment === 'Prepaid').length; 
+            const cod = d.filter(o => o.payment === 'COD').length;
+            
+            document.getElementById('stats-container').innerHTML = `${sc('Total Revenue', '₹'+rev.toLocaleString('en-IN'), 'wallet', 'text-indigo-600', 'bg-indigo-50')}${sc('My Earnings', '₹'+earn.toLocaleString('en-IN'), 'coins', 'text-emerald-600', 'bg-emerald-50')}${sc('Total Orders', tot, 'package', 'text-blue-600', 'bg-blue-50')}${sc('Prepaid Orders', pre, 'credit-card', 'text-violet-600', 'bg-violet-50')}${sc('COD Pending', cod, 'truck', 'text-orange-600', 'bg-orange-50')}`;
+            lucide.createIcons();
+        }
+        function sc(l, v, i, c, bg) { return `<div class="bg-white p-4 sm:p-5 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between h-24 sm:h-28 hover:shadow-md transition-shadow"><div class="flex justify-between items-start"><p class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider">${l}</p><div class="${bg} p-1.5 sm:p-2 rounded-lg"><i data-lucide="${i}" class="w-3.5 h-3.5 sm:w-4 sm:h-4 ${c}"></i></div></div><p class="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">${v}</p></div>`; }
+        
+        document.getElementById('importArea').addEventListener('click', () => document.getElementById('pdfInput').click());
+        document.getElementById('pdfInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0]; if (!file) return;
+            document.getElementById('dropZoneContent').innerHTML = `<div class="animate-pulse flex flex-col items-center"><i data-lucide="loader-2" class="w-10 h-10 text-indigo-600 animate-spin mb-3"></i><span class="text-sm font-bold text-indigo-900">Scanning Invoice...</span></div>`; lucide.createIcons();
+            try {
+                const arrayBuffer = await file.arrayBuffer(); const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise; const newOrders = []; let dateToday = new Date().toISOString().split('T')[0];
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    try {
+                        const page = await pdf.getPage(i); const textContent = await page.getTextContent(); const textItems = textContent.items.map(item => item.str).join('\n'); const textFlat = textItems.replace(/\n/g, ' ');
+                        let orderNo = "Unknown"; const onMatch = textFlat.match(/\b(2\d{16,})\b/); if (onMatch) orderNo = onMatch[1];
+                        let dateMatch = textFlat.match(/\b(\d{2})\.(\d{2})\.(\d{4})\b/); if(!dateMatch) dateMatch = textFlat.match(/\b(\d{2})\-(\d{2})\-(\d{4})\b/); if(dateMatch) dateToday = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+                        let customerName = "Unknown"; let location = "Unknown";
+                        const addrIndex = textItems.indexOf("Customer Address"); if (addrIndex !== -1) { const sub = textItems.substring(addrIndex).split('\n'); const valid = sub.filter(l => l.trim().length > 0 && !l.includes("Customer Address")); if (valid.length > 0) { customerName = valid[0].trim(); const pin = valid.find(l => /\d{6}/.test(l)); if(pin) location = pin.trim(); } } else { const btIndex = textItems.indexOf("BILL TO"); if(btIndex !== -1) { const lines = textItems.substring(btIndex).split('\n'); if(lines[1]) customerName = lines[1].replace(/BILL TO\/SHIP TO/, '').trim(); } }
+                        let sku = "Unknown SKU"; const deepSkuMatch = textItems.match(/Order\s*No\.?[\s\S]*?"([^"]+)"/); if(deepSkuMatch) sku = deepSkuMatch[1].trim(); else { const rawItems = textContent.items.map(item => item.str); const skuLineIndex = rawItems.findIndex(line => line.includes("SKU")); if (skuLineIndex !== -1) { for(let j=skuLineIndex+1; j<rawItems.length; j++) { const line = rawItems[j].trim(); if(line === "" || line.includes("Size") || line.includes("Qty")) continue; if(line.includes('"')) { const match = line.match(/"([^"]+)"/); if(match) { sku = match[1].trim(); break; } } } } }
+                        let description = "Imported Item"; const descIndex = textItems.indexOf("Description"); if (descIndex !== -1) { const descLines = textItems.substring(descIndex).split('\n'); let builtDesc = ""; for(let k=1; k<descLines.length; k++) { let line = descLines[k].trim(); if(line.includes("HSN") || line.startsWith(",,") || line.length < 2) continue; if(line.match(/^\d+$/)) break; builtDesc += line.replace(/"/g, '').replace(/,/g,' ') + " "; if(builtDesc.length > 80) break; } if(builtDesc.length > 5) description = builtDesc.trim(); }
+                        let amount = "0.00"; const monies = textFlat.match(/Rs\.?\s*(\d+\.\d{2})/g); if (monies) { const vals = monies.map(m => parseFloat(m.replace(/Rs\.?\s*/, ''))); amount = Math.max(...vals).toFixed(2); }
+                        let payment = "Prepaid"; if (textFlat.includes("Do not collect cash") || textFlat.includes("Prepaid")) payment = "Prepaid"; else if (textFlat.includes("Check the payable amount") || textFlat.includes("COD")) payment = "COD";
+                        const sellerPrice = lookupPrice(sku);
+                        newOrders.push({ id: Date.now().toString() + Math.random(), date: dateToday, orderNo, customerName: customerName.substring(0,25), location: location.substring(0,30), sku, description, qty: "1", amount, sellerPrice: sellerPrice || 0, payment, shippingDate: "", isPaid: false, returnStatus: "None" });
+                    } catch (errPage) { console.error("Page error", errPage); }
+                }
+                if (isOnline) { const batch = db.batch(); newOrders.forEach(item => { const ref = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(); delete item.id; batch.set(ref, { ...item, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }); await batch.commit(); }
+                else { orders = [...orders, ...newOrders]; saveLocal(); }
+                document.getElementById('dropZoneContent').innerHTML = `<div class="animate-in zoom-in flex flex-col items-center"><div class="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mb-1"><i data-lucide="check" class="w-6 h-6 text-emerald-600"></i></div><span class="text-sm font-bold text-emerald-800">Done! ${newOrders.length} Orders</span></div>`; lucide.createIcons();
+            } catch (err) { console.error(err); document.getElementById('dropZoneContent').innerHTML = `<div class="text-rose-500 font-bold text-sm">Failed to read PDF</div>`; }
+            setTimeout(() => { document.getElementById('dropZoneContent').innerHTML = `<div class="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mb-1 group-hover:scale-110 transition-transform duration-300"><i data-lucide="upload-cloud" class="w-6 h-6 text-indigo-600"></i></div><div><h3 class="text-sm font-bold text-slate-800">Import Meesho Invoice</h3><p class="text-xs text-slate-500 mt-1">Click or drag PDF here to auto-scan orders</p></div>`; lucide.createIcons(); document.getElementById('pdfInput').value = ''; }, 3000);
+        });
+
+        function exportToExcel() {
+            // Updated Export Logic: Filters data correctly and creates a CSV download with forced text formatting
+            const headers = ['Order Date', 'Order No', 'Customer', 'Location', 'SKU', 'Desc', 'Cust. Pay', 'Earnings', 'Return Status', 'Payment', 'Ship Date', 'Status'];
+            let data = orders;
+            
+            // Apply Date Filter
+            if (filterDate) {
+                const field = filterType === 'date' ? 'date' : 'shippingDate';
+                data = data.filter(o => o[field] === filterDate);
+            }
+            
+            // Apply Search Filter (was missing before)
+            if (searchTerm) {
+                const t = searchTerm.toLowerCase();
+                data = data.filter(o => 
+                    (o.customerName||'').toLowerCase().includes(t) || 
+                    (o.orderNo||'').toLowerCase().includes(t) || 
+                    (o.sku||'').toLowerCase().includes(t)
+                );
+            }
+
+            // Generate CSV Content
+            const csvRows = [];
+            csvRows.push(headers.join(','));
+
+            data.forEach(o => {
+                // Helper to safely get string and remove newlines/commas for clean cells
+                const safe = (v) => v ? String(v).replace(/[\r\n]+/g, ' ').trim() : '';
+                
+                const row = [
+                    safe(o.date),
+                    `\t${safe(o.orderNo)}`, // Force text format for Order No to prevent scientific notation in Excel
+                    safe(o.customerName),
+                    `\t${safe(o.location)}`, // Force text for Location (often Pincode) to keep leading zeros
+                    safe(o.sku),
+                    safe(o.description), 
+                    o.amount || '0', 
+                    getEarnings(o) || '0', // Use calculated earnings
+                    safe(o.returnStatus || 'None'),
+                    safe(o.payment),
+                    safe(o.shippingDate),
+                    o.isPaid ? 'Paid' : 'Pending'
+                ];
+                
+                // Quote wrap fields to handle special characters safely
+                const escapedRow = row.map(val => {
+                    if (String(val).includes(',') || String(val).includes('"')) {
+                        return `"${String(val).replace(/"/g, '""')}"`;
+                    }
+                    return val;
+                });
+                csvRows.push(escapedRow.join(','));
+            });
+
+            const csvString = csvRows.join('\n');
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `orders_export_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // UI Feedback
+            const b = document.getElementById('exportText'); 
+            const oldT = b.innerText; 
+            b.innerText='Downloaded!'; 
+            setTimeout(()=>b.innerText=oldT,2000);
+        }
+
+        function toggleForm() { document.getElementById('orderForm').classList.toggle('hidden'); }
+        document.getElementById('newOrderForm').addEventListener('submit', (e) => {
+            e.preventDefault(); const fd = new FormData(e.target); const d = Object.fromEntries(fd.entries()); d.isPaid = fd.get('isPaid') === 'on';
+            d.returnStatus = 'None'; // Default new orders to no return
+            if(isOnline) { d.createdAt=firebase.firestore.FieldValue.serverTimestamp(); db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').add(d); }
+            else { d.id=Date.now().toString(); orders.push(d); saveLocal(); } e.target.reset(); toggleForm();
+        });
+        function showHelpModal() { document.getElementById('helpModal').classList.remove('hidden'); }
+        document.getElementById('searchInput').addEventListener('input', (e)=>{ searchTerm=e.target.value; renderTable(); });
+        document.getElementById('dateFilter').addEventListener('change', (e)=>{ filterDate=e.target.value; renderTable(); });
+        document.getElementById('filterType').addEventListener('change', (e)=>{ filterType=e.target.value; renderTable(); });
+        document.getElementById('clearFilterBtn').addEventListener('click', ()=>{ filterDate=""; document.getElementById('dateFilter').value=""; renderTable(); });
+        
+        window.onload = initApp;
+    </script>
+</body>
+</html>
