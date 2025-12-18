@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Order Manager (v17.0 Mobile Optimized)</title>
+    <title>Order Manager (v18.0 Sync Ready)</title>
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -114,7 +114,7 @@
              <button onclick="showHelpModal()" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 text-amber-400 hover:text-amber-300 transition-colors text-left text-xs font-semibold">
                 <i data-lucide="life-buoy" class="w-4 h-4"></i><span>Help & Guide</span>
             </button>
-            <div class="mt-4 pt-4 border-t border-slate-800 text-[10px] text-center text-slate-600 font-mono">v17.0 Mobile</div>
+            <div class="mt-4 pt-4 border-t border-slate-800 text-[10px] text-center text-slate-600 font-mono">v18.0 Sync Ready</div>
         </div>
     </aside>
 
@@ -387,8 +387,33 @@
     </div>
 
     <script>
-        let firebaseConfig = null;
-        try { if (typeof __firebase_config !== 'undefined') firebaseConfig = JSON.parse(__firebase_config); } catch(e) {}
+        // -----------------------------------------------------
+        // 1. PASTE YOUR FIREBASE CONFIG HERE
+        // -----------------------------------------------------
+        const USER_PROVIDED_CONFIG = {
+  apiKey: "AIzaSyC-34B0snlT89q5Jk1vBrDp_LcqPq2a3v0",
+  authDomain: "ordermanager-59b76.firebaseapp.com",
+  projectId: "ordermanager-59b76",
+  storageBucket: "ordermanager-59b76.firebasestorage.app",
+  messagingSenderId: "778288232688",
+  appId: "1:778288232688:web:21f81c6d5c1880d8cf2a35"
+};
+
+        
+        // Example of what it looks like (Do not uncomment this, just paste yours above replacing 'null'):
+        // const USER_PROVIDED_CONFIG = {
+        //    apiKey: "AIzaSyD...",
+        //    authDomain: "order-manager.firebaseapp.com",
+        //    projectId: "order-manager",
+        //    storageBucket: "order-manager.appspot.com",
+        //    messagingSenderId: "123456...",
+        //    appId: "1:123456..."
+        // };
+        // -----------------------------------------------------
+
+        let firebaseConfig = USER_PROVIDED_CONFIG;
+        try { if (!firebaseConfig && typeof __firebase_config !== 'undefined') firebaseConfig = JSON.parse(__firebase_config); } catch(e) {}
+        
         let db, auth, user, appId;
         let isOnline = false;
         
@@ -397,7 +422,7 @@
         
         let orders = [];
         let products = {}; 
-        let returnSettings = { customer: 161, rto: 0 }; // Default settings
+        let returnSettings = { customer: 161, rto: 0 }; 
         let filterDate = "";
         let filterType = "date";
         let searchTerm = "";
@@ -429,17 +454,25 @@
                 firebase.initializeApp(firebaseConfig);
                 db = firebase.firestore();
                 auth = firebase.auth();
-                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                // IMPORTANT: If user provided their own config, we use a shared ID to ensure sync
+                if (USER_PROVIDED_CONFIG) {
+                    appId = 'shared_store'; // Shared namespace
+                } else {
+                    appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                }
+
                 isOnline = true;
-                document.getElementById('connectionStatus').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Online';
+                document.getElementById('connectionStatus').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Online (Sync)';
+                
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) auth.signInWithCustomToken(__initial_auth_token);
                 else auth.signInAnonymously();
+                
                 auth.onAuthStateChanged((u) => { 
                     if (u) { 
                         user = u; 
                         setupFirebaseListener();
-                        // Load remote return settings
-                        db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('settings').doc('returns').get().then(doc => {
+                        // Get settings with shared path logic
+                        getCollectionRef('settings').doc('returns').get().then(doc => {
                             if (doc.exists) { returnSettings = doc.data(); updateReturnSettingsUI(); }
                         });
                     } 
@@ -451,6 +484,16 @@
             const skuInput = document.querySelector('input[name="sku"]');
             if(skuInput) skuInput.addEventListener('input', function() { const p = lookupPrice(this.value); if(p) document.getElementById('formSellerPrice').value = p; });
             document.getElementById('clearFilterBtn').addEventListener('click', (e) => { e.stopPropagation(); fp.clear(); filterDate = ""; updateClearButton(""); renderTable(); });
+        }
+
+        // --- HELPER FOR DATABASE PATHS (CRITICAL FOR SYNC) ---
+        function getCollectionRef(collName) {
+            // If the user provided their own config, we use a "Shared Admin" ID for data storage
+            // This ensures Mobile and Laptop read the same path regardless of Anonymous User ID
+            const storageId = USER_PROVIDED_CONFIG ? 'main_admin_store' : user.uid;
+            
+            // Path: artifacts/{appId}/users/{storageId}/accounts/{currentAccount}/{collName}
+            return db.collection('artifacts').doc(appId).collection('users').doc(storageId).collection('accounts').doc(currentAccount).collection(collName);
         }
 
         // --- ACCOUNT MANAGEMENT ---
@@ -492,7 +535,9 @@
         }
         function setupFirebaseListener() {
             if (orderUnsubscribe) orderUnsubscribe();
-            orderUnsubscribe = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').onSnapshot((snapshot) => {
+            
+            // Use helper to get consistent path
+            orderUnsubscribe = getCollectionRef('orders').onSnapshot((snapshot) => {
                 orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 orders.sort((a, b) => new Date(b.date) - new Date(a.date)); renderTable();
             });
@@ -538,7 +583,7 @@
             returnSettings = { customer: cLoss, rto: rLoss };
             
             if (isOnline) {
-                db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('settings').doc('returns').set(returnSettings);
+                getCollectionRef('settings').doc('returns').set(returnSettings);
             }
             localStorage.setItem(`return_settings_${currentAccount}`, JSON.stringify(returnSettings));
             
@@ -547,17 +592,15 @@
         }
 
         function getEarnings(order) {
-            // Logic: If Returned, Earning = -Loss. If Active, Earning = SellerPrice.
             if (order.returnStatus === 'Customer Return') return -(returnSettings.customer || 161);
             if (order.returnStatus === 'RTO') return -(returnSettings.rto || 0);
-            
             const p = order.sellerPrice || lookupPrice(order.sku);
             return parseFloat(p) || 0;
         }
 
         function updateReturnStatus(id, status) {
             if (isOnline) {
-                db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(id).update({ returnStatus: status });
+                getCollectionRef('orders').doc(id).update({ returnStatus: status });
             } else {
                 const o = orders.find(x => x.id === id);
                 if (o) { o.returnStatus = status; saveLocal(); }
@@ -620,12 +663,7 @@
                 if(oldSku !== newSku) { delete products[oldSku]; }
                 products[newSku] = newPrice;
                 localStorage.setItem(`products_${currentAccount}`, JSON.stringify(products));
-                
-                // Smart update orders if price changed (simplest approach: updateAll runs on price check logic)
-                updateAllOrderPrices(); 
-                renderProducts();
-                renderTable();
-                
+                updateAllOrderPrices(); renderProducts(); renderTable();
                 document.getElementById('editProductModal').classList.add('hidden');
             }
         });
@@ -645,8 +683,7 @@
             if(selectedSkus.length === 0 || !confirm(`Delete ${selectedSkus.length} products?`)) return;
             selectedSkus.forEach(sku => delete products[sku]);
             localStorage.setItem(`products_${currentAccount}`, JSON.stringify(products));
-            renderProducts();
-            deselectAllProducts();
+            renderProducts(); deselectAllProducts();
         }
 
         function deleteProduct(sku) { 
@@ -666,7 +703,7 @@
                 const price = products[order.sku] || lookupPrice(order.sku);
                 if (price && (!order.sellerPrice || order.sellerPrice != price)) {
                     order.sellerPrice = price; updated = true;
-                    if (isOnline && order.id) { db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(order.id).update({ sellerPrice: price }); }
+                    if (isOnline && order.id) { getCollectionRef('orders').doc(order.id).update({ sellerPrice: price }); }
                 }
             });
             if (updated && !isOnline) saveLocal();
@@ -708,7 +745,7 @@
             const order = orders.find(o => o.id === currentActiveOrderId);
             if (order) {
                 order.sku = newSku; const price = products[newSku] || 0; order.sellerPrice = price;
-                if (isOnline) { db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(currentActiveOrderId).update({ sku: newSku, sellerPrice: price }); }
+                if (isOnline) { getCollectionRef('orders').doc(currentActiveOrderId).update({ sku: newSku, sellerPrice: price }); }
                 else { saveLocal(); renderTable(); }
             }
             closeGlobalDropdown();
@@ -723,12 +760,12 @@
         function getSelectedIds() { return Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value); }
         function bulkMarkPaid() {
             const ids = getSelectedIds(); if(ids.length === 0 || !confirm(`Mark ${ids.length} orders as Paid?`)) return;
-            if (isOnline) { const batch = db.batch(); ids.forEach(id => { const ref = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(id); batch.update(ref, { isPaid: true }); }); batch.commit().then(() => deselectAll()); }
+            if (isOnline) { const batch = db.batch(); ids.forEach(id => { const ref = getCollectionRef('orders').doc(id); batch.update(ref, { isPaid: true }); }); batch.commit().then(() => deselectAll()); }
             else { orders.forEach(o => { if (ids.includes(o.id)) o.isPaid = true; }); saveLocal(); deselectAll(); }
         }
         function bulkDelete() {
             const ids = getSelectedIds(); if(ids.length === 0 || !confirm(`Delete ${ids.length} orders permanently?`)) return;
-            if (isOnline) { const batch = db.batch(); ids.forEach(id => { const ref = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(id); batch.delete(ref); }); batch.commit().then(() => deselectAll()); }
+            if (isOnline) { const batch = db.batch(); ids.forEach(id => { const ref = getCollectionRef('orders').doc(id); batch.delete(ref); }); batch.commit().then(() => deselectAll()); }
             else { orders = orders.filter(o => !ids.includes(o.id)); saveLocal(); deselectAll(); }
         }
 
@@ -742,7 +779,7 @@
             let d = orders; if (filterDate) { const f = filterType === 'date' ? 'date' : 'shippingDate'; d = d.filter(o => o[f] === filterDate); }
             if (searchTerm) { const t = searchTerm.toLowerCase(); d = d.filter(o => (o.customerName||'').toLowerCase().includes(t) || (o.orderNo||'').toLowerCase().includes(t) || (o.sku||'').toLowerCase().includes(t)); }
             
-            renderStats(d); // Update Stats based on filtered data (calculated earnings included)
+            renderStats(d); 
             
             if (d.length === 0) { 
                 const emptyState = `<tr><td colspan="12" class="p-20 text-center"><div class="flex flex-col items-center justify-center opacity-50"><i data-lucide="package-open" class="w-12 h-12 mb-3 stroke-1"></i><p class="text-sm">No orders found</p></div></td></tr>`;
@@ -756,13 +793,11 @@
                 const isKnownProduct = products.hasOwnProperty(o.sku); 
                 const lookedUpPrice = lookupPrice(o.sku); 
                 
-                // Ensure base sellerPrice is up to date if SKU exists
                 if (!o.returnStatus || o.returnStatus === 'None') {
                      const myEarnings = o.sellerPrice || lookedUpPrice || 0;
-                     if (myEarnings > 0 && o.sellerPrice != myEarnings) { o.sellerPrice = myEarnings; if(isOnline && o.id) db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(o.id).update({ sellerPrice: myEarnings }); else if(!isOnline) saveLocal(); }
+                     if (myEarnings > 0 && o.sellerPrice != myEarnings) { o.sellerPrice = myEarnings; if(isOnline && o.id) getCollectionRef('orders').doc(o.id).update({ sellerPrice: myEarnings }); else if(!isOnline) saveLocal(); }
                 }
 
-                // Calculate display earning (considering returns)
                 const finalEarning = getEarnings(o);
                 let earningsClass = "text-amber-500";
                 if (finalEarning > 0) earningsClass = "text-indigo-600 font-bold";
@@ -770,7 +805,6 @@
 
                 const btnClass = isKnownProduct ? "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:ring-2 hover:ring-indigo-100 hover:text-indigo-700" : "bg-white text-rose-500 border-rose-200 hover:border-rose-300 hover:bg-rose-50";
                 
-                // Logic for Return Dropdown styling - refined in v16.2
                 let returnWrapperClass = "bg-white border-slate-200 text-slate-600 font-medium hover:border-indigo-400 hover:text-indigo-600 transition-colors shadow-sm";
                 let returnIconClass = "text-slate-400 group-hover/ret:text-indigo-500";
                 
@@ -841,17 +875,15 @@
             });
             lucide.createIcons();
         }
-        function updateShipDate(id, d) { if(isOnline) db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(id).update({shippingDate:d}); else { orders.find(o=>o.id===id).shippingDate=d; saveLocal(); } }
-        function deleteOrder(id) { if(!confirm('Delete?')) return; if(isOnline) db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(id).delete(); else { orders = orders.filter(o=>o.id!==id); saveLocal(); } }
+        function updateShipDate(id, d) { if(isOnline) getCollectionRef('orders').doc(id).update({shippingDate:d}); else { orders.find(o=>o.id===id).shippingDate=d; saveLocal(); } }
+        function deleteOrder(id) { if(!confirm('Delete?')) return; if(isOnline) getCollectionRef('orders').doc(id).delete(); else { orders = orders.filter(o=>o.id!==id); saveLocal(); } }
+        function togglePaid(id, val) { if(isOnline) getCollectionRef('orders').doc(id).update({isPaid:val}); else { orders.find(o=>o.id===id).isPaid=val; saveLocal(); } }
         
         function renderStats(data) {
             const d = data || orders; 
             const tot = d.length; 
             const rev = d.reduce((s, o) => s + (parseFloat(o.amount) || 0), 0); 
-            
-            // Calc earnings using the new smart function that subtracts losses
             const earn = d.reduce((s, o) => s + getEarnings(o), 0); 
-            
             const pre = d.filter(o => o.payment === 'Prepaid').length; 
             const cod = d.filter(o => o.payment === 'COD').length;
             
@@ -878,11 +910,11 @@
                         let amount = "0.00"; const monies = textFlat.match(/Rs\.?\s*(\d+\.\d{2})/g); if (monies) { const vals = monies.map(m => parseFloat(m.replace(/Rs\.?\s*/, ''))); amount = Math.max(...vals).toFixed(2); }
                         let payment = "Prepaid"; if (textFlat.includes("Do not collect cash") || textFlat.includes("Prepaid")) payment = "Prepaid"; else if (textFlat.includes("Check the payable amount") || textFlat.includes("COD")) payment = "COD";
                         const sellerPrice = lookupPrice(sku);
-                        newOrders.push({ id: Date.now().toString() + Math.random(), date: dateToday, orderNo, customerName: customerName.substring(0,25), location: location.substring(0,30), sku, description, qty: "1", amount, sellerPrice: sellerPrice || 0, payment, shippingDate: "", isPaid: false, returnStatus: "None" });
+                        newOrders.push({ date: dateToday, orderNo, customerName: customerName.substring(0,25), location: location.substring(0,30), sku, description, qty: "1", amount, sellerPrice: sellerPrice || 0, payment, shippingDate: "", isPaid: false, returnStatus: "None" });
                     } catch (errPage) { console.error("Page error", errPage); }
                 }
-                if (isOnline) { const batch = db.batch(); newOrders.forEach(item => { const ref = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').doc(); delete item.id; batch.set(ref, { ...item, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }); await batch.commit(); }
-                else { orders = [...orders, ...newOrders]; saveLocal(); }
+                if (isOnline) { const batch = db.batch(); newOrders.forEach(item => { const ref = getCollectionRef('orders').doc(); batch.set(ref, { ...item, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }); await batch.commit(); }
+                else { newOrders.forEach(n => n.id = Date.now().toString() + Math.random()); orders = [...orders, ...newOrders]; saveLocal(); }
                 document.getElementById('dropZoneContent').innerHTML = `<div class="animate-in zoom-in flex flex-col items-center"><div class="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mb-1"><i data-lucide="check" class="w-6 h-6 text-emerald-600"></i></div><span class="text-sm font-bold text-emerald-800">Done! ${newOrders.length} Orders</span></div>`; lucide.createIcons();
             } catch (err) { console.error(err); document.getElementById('dropZoneContent').innerHTML = `<div class="text-rose-500 font-bold text-sm">Failed to read PDF</div>`; }
             setTimeout(() => { document.getElementById('dropZoneContent').innerHTML = `<div class="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mb-1 group-hover:scale-110 transition-transform duration-300"><i data-lucide="upload-cloud" class="w-6 h-6 text-indigo-600"></i></div><div><h3 class="text-sm font-bold text-slate-800">Import Meesho Invoice</h3><p class="text-xs text-slate-500 mt-1">Click or drag PDF here to auto-scan orders</p></div>`; lucide.createIcons(); document.getElementById('pdfInput').value = ''; }, 3000);
@@ -962,9 +994,17 @@
         function toggleForm() { document.getElementById('orderForm').classList.toggle('hidden'); }
         document.getElementById('newOrderForm').addEventListener('submit', (e) => {
             e.preventDefault(); const fd = new FormData(e.target); const d = Object.fromEntries(fd.entries()); d.isPaid = fd.get('isPaid') === 'on';
-            d.returnStatus = 'None'; // Default new orders to no return
-            if(isOnline) { d.createdAt=firebase.firestore.FieldValue.serverTimestamp(); db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('accounts').doc(currentAccount).collection('orders').add(d); }
-            else { d.id=Date.now().toString(); orders.push(d); saveLocal(); } e.target.reset(); toggleForm();
+            d.returnStatus = 'None'; 
+            if(isOnline) { 
+                d.createdAt=firebase.firestore.FieldValue.serverTimestamp(); 
+                getCollectionRef('orders').add(d); 
+            }
+            else { 
+                d.id=Date.now().toString(); 
+                orders.push(d); 
+                saveLocal(); 
+            } 
+            e.target.reset(); toggleForm();
         });
         function showHelpModal() { document.getElementById('helpModal').classList.remove('hidden'); }
         document.getElementById('searchInput').addEventListener('input', (e)=>{ searchTerm=e.target.value; renderTable(); });
